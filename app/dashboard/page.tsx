@@ -254,8 +254,17 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen p-6 md:p-8 bg-background">
-      <div className="max-w-6xl mx-auto space-y-6">
+   <div
+  className="min-h-screen p-6 md:p-8 relative overflow-hidden"
+  style={{
+    background: `
+      radial-gradient(ellipse at 10% 10%, rgba(100, 30, 160, 0.12), transparent 40%),
+      radial-gradient(ellipse at 90% 90%, rgba(120, 0, 180, 0.18), transparent 45%),
+      #08050d
+    `,
+  }}
+>
+      <div className="max-w-6xl mx-auto space-y-6 relative z-10">
 
         {/* NAVBAR */}
         <header className="flex justify-between items-center border-b pb-4">
