@@ -1,287 +1,609 @@
 
 "use client";
 
+import { clearTokens, getUserId } from "@/lib/auth";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Eye,
+  LogOut,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
-import { clearTokens } from "@/lib/auth";
+import { apiClient } from "@/lib/api";
 import { CONFIG } from "@/lib/config";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-const categories = [
-  { name: "All Products", icon: "✦" },
-  { name: "Electronics", icon: "⌘" },
-  { name: "Fashion", icon: "♧" },
-  { name: "Accessories", icon: "◇" },
-  { name: "Home & Living", icon: "⌂" },
-];
-
-const products = [
-  {
-    name: "Wireless Headphones",
-    category: "Electronics",
-    price: "₱1,499",
-    icon: "🎧",
-    color: "from-violet-900/50 to-purple-950/80",
-    tag: "POPULAR",
-  },
-  {
-    name: "Casual Sneakers",
-    category: "Fashion",
-    price: "₱1,899",
-    icon: "👟",
-    color: "from-fuchsia-900/40 to-purple-950/80",
-    tag: "NEW",
-  },
-  {
-    name: "Smart Watch",
-    category: "Electronics",
-    price: "₱2,499",
-    icon: "⌚",
-    color: "from-indigo-900/50 to-violet-950/80",
-    tag: "FEATURED",
-  },
-  {
-    name: "Everyday Backpack",
-    category: "Accessories",
-    price: "₱999",
-    icon: "🎒",
-    color: "from-purple-900/50 to-indigo-950/80",
-    tag: "POPULAR",
-  },
-];
+interface Address {
+  address_id: number;
+  id: number;
+  street: string;
+  city: string;
+  province: string;
+  postal_code: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const { isChecking } = useAuthGuard({ requireAuth: true });
 
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [selectedAddress, setSelectedAddress] =
+    useState<Address | null>(null);
+
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const [street, setStreet] = useState("");
+  const [city, setCity] = useState("");
+  const [province, setProvince] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+
+  // READ ALL ADDRESSES
+  const fetchAddresses = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const data = await apiClient<Address[]>(
+        CONFIG.ENDPOINTS.ADDRESS,
+        {
+          method: "GET",
+          requiresAuth: true,
+        }
+      );
+
+      setAddresses(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setError(err.message || "Failed to fetch addresses.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isChecking) {
+      fetchAddresses();
+    }
+  }, [isChecking, fetchAddresses]);
+
+  // READ SINGLE ADDRESS
+  const handleViewAddress = async (addressId: number) => {
+    setError("");
+    setSuccess("");
+
+    try {
+      const data = await apiClient<Address>(
+        `${CONFIG.ENDPOINTS.ADDRESS}/${addressId}`,
+        {
+          method: "GET",
+          requiresAuth: true,
+        }
+      );
+
+      setSelectedAddress(data);
+    } catch (err: any) {
+      setError(err.message || "Failed to load address details.");
+    }
+  };
+
+  // OPEN CREATE FORM
+  const openCreateForm = () => {
+    setEditingId(null);
+    setStreet("");
+    setCity("");
+    setProvince("");
+    setPostalCode("");
+    setSelectedAddress(null);
+    setError("");
+    setSuccess("");
+    setIsFormOpen(true);
+  };
+
+  // OPEN UPDATE FORM
+  const openEditForm = (address: Address) => {
+    setEditingId(address.address_id);
+    setStreet(address.street);
+    setCity(address.city);
+    setProvince(address.province);
+    setPostalCode(address.postal_code);
+    setSelectedAddress(null);
+    setError("");
+    setSuccess("");
+    setIsFormOpen(true);
+  };
+
+  // CLOSE FORM
+  const closeForm = () => {
+    setIsFormOpen(false);
+    setEditingId(null);
+    setStreet("");
+    setCity("");
+    setProvince("");
+    setPostalCode("");
+  };
+
+  // CREATE AND UPDATE
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    setSubmitting(true);
+    setError("");
+    setSuccess("");
+
+    const userId = getUserId();
+
+    if (!userId) {
+      setError("Unable to determine user ID. Please log in again.");
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const addressData = {
+        id: Number(userId),
+        street,
+        city,
+        province,
+        postal_code: postalCode,
+      };
+
+      if (editingId !== null) {
+        await apiClient(
+          `${CONFIG.ENDPOINTS.ADDRESS}/${editingId}`,
+          {
+            method: "PUT",
+            requiresAuth: true,
+            body: JSON.stringify(addressData),
+          }
+        );
+
+        setSuccess(`Address #${editingId} updated successfully.`);
+      } else {
+        await apiClient(CONFIG.ENDPOINTS.ADDRESS, {
+          method: "POST",
+          requiresAuth: true,
+          body: JSON.stringify(addressData),
+        });
+
+        setSuccess("New address created successfully.");
+      }
+
+      closeForm();
+      await fetchAddresses();
+    } catch (err: any) {
+      setError(err.message || "Operation failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // DELETE ADDRESS
+  const handleDelete = async (addressId: number) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete Address #${addressId}?`
+    );
+
+    if (!confirmed) return;
+
+    setError("");
+    setSuccess("");
+
+    try {
+      await apiClient(
+        `${CONFIG.ENDPOINTS.ADDRESS}/${addressId}`,
+        {
+          method: "DELETE",
+          requiresAuth: true,
+        }
+      );
+
+      if (selectedAddress?.address_id === addressId) {
+        setSelectedAddress(null);
+      }
+
+      setSuccess(`Address #${addressId} deleted successfully.`);
+      await fetchAddresses();
+    } catch (err: any) {
+      setError(err.message || "Failed to delete address.");
+    }
+  };
+
+  // LOGOUT
+  const handleLogout = () => {
+    clearTokens();
+    router.push(CONFIG.ROUTES.LOGIN);
+  };
+
   if (isChecking) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#08060D]">
-        <p className="text-sm text-violet-400">
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-muted-foreground">
           Verifying session...
         </p>
       </div>
     );
   }
 
-  const handleLogout = () => {
-    clearTokens();
-    router.push(CONFIG.ROUTES.LOGIN);
-  };
-
   return (
-    <main className="min-h-screen bg-[#08060D] text-white">
+    <div className="min-h-screen p-6 md:p-8 bg-background">
+      <div className="max-w-6xl mx-auto space-y-6">
 
-      {/* NAVBAR */}
-      <nav className="sticky top-0 z-50 border-b border-white/10 bg-[#100D18]/95 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 sm:px-8">
-
-          <h1 className="text-2xl font-extrabold tracking-tight">
-            Buy<span className="text-violet-500">Bai</span>
-          </h1>
-
-          <div className="hidden items-center gap-8 text-sm text-gray-400 md:flex">
-            <a href="#home" className="font-semibold text-violet-400">
-              Home
-            </a>
-            <a href="#categories" className="transition hover:text-violet-400">
-              Categories
-            </a>
-            <a href="#products" className="transition hover:text-violet-400">
-              Products
-            </a>
+        {/* NAVBAR */}
+        <header className="flex justify-between items-center border-b pb-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Address Dashboard
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Manage customer addresses
+            </p>
           </div>
 
-          <Button
-            onClick={handleLogout}
-            variant="outline"
-            className="rounded-xl border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500 hover:text-white"
-          >
+          <Button variant="destructive" onClick={handleLogout}>
+            <LogOut className="w-4 h-4 mr-2" />
             Logout
           </Button>
+        </header>
 
-        </div>
-      </nav>
-
-      <div className="mx-auto max-w-7xl space-y-14 px-5 py-10 sm:px-8">
-
-        {/* HERO SECTION */}
-        <section
-          id="home"
-          className="relative overflow-hidden rounded-3xl border border-violet-500/20 bg-gradient-to-br from-[#24123D] via-[#160E25] to-[#100D18] p-8 sm:p-12"
-        >
-          <div className="pointer-events-none absolute -right-20 -top-24 h-80 w-80 rounded-full bg-violet-600/20 blur-[100px]" />
-
-          <div className="relative z-10 max-w-2xl">
-
-            <span className="inline-block rounded-full border border-violet-400/30 bg-violet-500/10 px-4 py-2 text-xs font-semibold tracking-widest text-violet-300">
-              WELCOME TO BUYBAI
-            </span>
-
-            <h2 className="mt-6 text-4xl font-extrabold leading-tight sm:text-5xl">
-              Everything you need,
-              <span className="block text-violet-400">
-                all in one place.
-              </span>
-            </h2>
-
-            <p className="mt-5 max-w-lg text-sm leading-7 text-gray-400 sm:text-base">
-              Discover products, explore different categories,
-              and find something you will love at BuyBai.
-            </p>
-
-            <a
-              href="#products"
-              className="mt-8 inline-flex items-center gap-3 rounded-xl bg-gradient-to-r from-violet-700 to-purple-600 px-7 py-4 text-sm font-bold text-white shadow-lg shadow-violet-900/30 transition hover:scale-105 hover:from-violet-600 hover:to-fuchsia-600"
-            >
-              Explore Products
-              <span className="text-lg">→</span>
-            </a>
-
+        {/* NOTIFICATIONS */}
+        {error && (
+          <div className="p-3 text-sm text-red-600 bg-red-50 dark:bg-red-950/50 rounded-md border border-red-200 dark:border-red-900">
+            {error}
           </div>
+        )}
 
-          <div className="pointer-events-none absolute bottom-0 right-8 hidden text-[180px] font-black text-violet-400/10 lg:block">
-            B
+        {success && (
+          <div className="p-3 text-sm text-emerald-700 bg-emerald-50 dark:bg-emerald-950/50 rounded-md border border-emerald-200 dark:border-emerald-900">
+            {success}
           </div>
-        </section>
+        )}
 
-        {/* CATEGORIES */}
-        <section id="categories">
+        {/* CREATE / UPDATE FORM */}
+        {isFormOpen && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>
+                  {editingId !== null
+                    ? `Update Address #${editingId}`
+                    : "Create New Address"}
+                </CardTitle>
 
-          <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-violet-400">
-              Browse Collections
-            </p>
-            <h2 className="mt-2 text-2xl font-bold">
-              Shop by Category
-            </h2>
-            <p className="mt-2 text-sm text-gray-500">
-              Find products based on what you need.
-            </p>
-          </div>
+                <CardDescription>
+                  Enter the customer address details below.
+                </CardDescription>
+              </div>
 
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            {categories.map((category) => (
-              <Card
-                key={category.name}
-                className="border border-white/10 bg-[#100D18] transition duration-300 hover:-translate-y-1 hover:border-violet-500/50 hover:bg-[#191326]"
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={closeForm}
               >
-                <CardContent className="flex flex-col items-center gap-3 p-5 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 text-3xl text-violet-400">
-                    {category.icon}
+                <X className="w-4 h-4" />
+              </Button>
+            </CardHeader>
+
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                  <div className="space-y-2">
+                    <Label htmlFor="street">Street</Label>
+                    <Input
+                      id="street"
+                      placeholder="Enter Street"
+                      value={street}
+                      onChange={(e) => setStreet(e.target.value)}
+                      required
+                    />
                   </div>
 
-                  <h3 className="text-sm font-semibold text-gray-200">
-                    {category.name}
-                  </h3>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
+                  <div className="space-y-2">
+                    <Label htmlFor="city">City</Label>
+                    <Input
+                      id="city"
+                      placeholder="Enter City"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      required
+                    />
+                  </div>
 
-        {/* FEATURED PRODUCTS */}
-        <section id="products">
+                  <div className="space-y-2">
+                    <Label htmlFor="province">Province</Label>
+                    <Input
+                      id="province"
+                      placeholder="Enter Province"
+                      value={province}
+                      onChange={(e) => setProvince(e.target.value)}
+                      required
+                    />
+                  </div>
 
-          <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="postal_code">Postal Code</Label>
+                    <Input
+                      id="postal_code"
+                      placeholder="Enter Postal Code"
+                      value={postalCode}
+                      onChange={(e) => setPostalCode(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={closeForm}
+                  >
+                    Cancel
+                  </Button>
+
+                  <Button type="submit" disabled={submitting}>
+                    {submitting
+                      ? "Saving..."
+                      : editingId !== null
+                      ? "Save Changes"
+                      : "Create Address"}
+                  </Button>
+                </div>
+
+              </form>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* SINGLE ADDRESS DETAILS */}
+        {selectedAddress && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>
+                  Address Details (#{selectedAddress.address_id})
+                </CardTitle>
+                <CardDescription>
+                  Address information from the backend.
+                </CardDescription>
+              </div>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSelectedAddress(null)}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </CardHeader>
+
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+
+              <div>
+                <span className="text-muted-foreground block">
+                  Address ID
+                </span>
+                <span className="font-medium">
+                  {selectedAddress.address_id}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground block">
+                  Customer ID
+                </span>
+                <span className="font-medium">
+                  {selectedAddress.id}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground block">
+                  Street
+                </span>
+                <span className="font-medium">
+                  {selectedAddress.street}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground block">
+                  City
+                </span>
+                <span className="font-medium">
+                  {selectedAddress.city}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground block">
+                  Province
+                </span>
+                <span className="font-medium">
+                  {selectedAddress.province}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-muted-foreground block">
+                  Postal Code
+                </span>
+                <span className="font-medium">
+                  {selectedAddress.postal_code}
+                </span>
+              </div>
+
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ADDRESSES TABLE */}
+        <Card>
+          <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-violet-400">
-                Our Collection
-              </p>
-
-              <h2 className="mt-2 text-2xl font-bold">
-                Featured Products
-              </h2>
-
-              <p className="mt-2 text-sm text-gray-500">
-                Check out some of our featured items.
-              </p>
+              <CardTitle>Addresses</CardTitle>
+              <CardDescription>
+                All customer addresses stored in the backend.
+              </CardDescription>
             </div>
 
-            <span className="text-sm font-medium text-violet-400">
-              Explore BuyBai ✦
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-
-            {products.map((product) => (
-              <Card
-                key={product.name}
-                className="group overflow-hidden rounded-2xl border border-white/10 bg-[#100D18] transition duration-300 hover:-translate-y-2 hover:border-violet-500/50 hover:shadow-[0_10px_40px_rgba(139,92,246,0.12)]"
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={fetchAddresses}
+                disabled={loading}
               >
-                <CardContent className="p-0">
+                <RefreshCw
+                  className={`w-4 h-4 mr-2 ${
+                    loading ? "animate-spin" : ""
+                  }`}
+                />
+                Read / Refresh
+              </Button>
 
-                  {/* PRODUCT IMAGE PLACEHOLDER */}
-                  <div
-                    className={`relative flex h-52 items-center justify-center bg-gradient-to-br ${product.color}`}
-                  >
-                    <span className="absolute left-4 top-4 rounded-full border border-violet-400/20 bg-black/30 px-3 py-1 text-[10px] font-bold tracking-wider text-violet-300">
-                      {product.tag}
-                    </span>
+              <Button onClick={openCreateForm}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create Address
+              </Button>
+            </div>
 
-                    <span className="text-7xl transition duration-300 group-hover:scale-110">
-                      {product.icon}
-                    </span>
-                  </div>
+          </CardHeader>
 
-                  {/* PRODUCT DETAILS */}
-                  <div className="space-y-3 p-5">
+          <CardContent>
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
 
-                    <p className="text-xs font-medium text-violet-400">
-                      {product.category}
-                    </p>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Address ID</TableHead>
+                    <TableHead>Customer ID</TableHead>
+                    <TableHead>Street</TableHead>
+                    <TableHead>City</TableHead>
+                    <TableHead>Province</TableHead>
+                    <TableHead>Postal Code</TableHead>
+                    <TableHead className="text-right">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
 
-                    <h3 className="text-base font-bold text-white">
-                      {product.name}
-                    </h3>
+                <TableBody>
+                  {loading ? (
+                    <TableRow key="loading-row">
+                      <TableCell
+                        colSpan={7}
+                        className="h-24 text-center text-muted-foreground"
+                      >
+                        Loading addresses...
+                      </TableCell>
+                    </TableRow>
+                  ) : addresses.length === 0 ? (
+                    <TableRow key="empty-row">
+                      <TableCell
+                        colSpan={7}
+                        className="h-24 text-center text-muted-foreground"
+                      >
+                        No addresses found. Click "Create Address" to add one.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    addresses.map((address, index) => (
+                      <TableRow
+                        key={`${address.address_id}-${index}`}
+                      >
+                        <TableCell className="font-medium">
+                          {address.address_id}
+                        </TableCell>
 
-                    <div className="flex items-center justify-between border-t border-white/10 pt-4">
-                      <span className="text-lg font-extrabold text-violet-400">
-                        {product.price}
-                      </span>
+                        <TableCell>{address.id}</TableCell>
 
-                      <span className="text-xs text-gray-500">
-                        BuyBai
-                      </span>
-                    </div>
+                        <TableCell>{address.street}</TableCell>
 
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                        <TableCell>{address.city}</TableCell>
 
-          </div>
-        </section>
+                        <TableCell>{address.province}</TableCell>
 
-        {/* BOTTOM BANNER */}
-        <section className="rounded-2xl border border-violet-500/20 bg-[#151020] p-7 text-center sm:p-10">
-          <h2 className="text-2xl font-bold">
-            Welcome to <span className="text-violet-400">BuyBai</span>
-          </h2>
+                        <TableCell>{address.postal_code}</TableCell>
 
-          <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-gray-400">
-            Your shopping experience starts here.
-            Explore our collections and discover something new.
-          </p>
-        </section>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
 
-        {/* FOOTER */}
-        <footer className="border-t border-white/10 py-7 text-center">
-          <p className="text-xl font-extrabold">
-            Buy<span className="text-violet-500">Bai</span>
-          </p>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                handleViewAddress(address.address_id)
+                              }
+                            >
+                              <Eye className="w-4 h-4 mr-1" />
+                              Read
+                            </Button>
 
-          <p className="mt-3 text-xs text-gray-500">
-            © 2026 BuyBai. All rights reserved.
-          </p>
-        </footer>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => openEditForm(address)}
+                            >
+                              <Pencil className="w-4 h-4 mr-1" />
+                              Update
+                            </Button>
+
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() =>
+                                handleDelete(address.address_id)
+                              }
+                            >
+                              <Trash2 className="w-4 h-4 mr-1" />
+                              Delete
+                            </Button>
+
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
 
       </div>
-    </main>
+    </div>
   );
 }
